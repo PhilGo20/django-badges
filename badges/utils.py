@@ -64,6 +64,7 @@ class MetaBadge(object):
     __metaclass__ = MetaBadgeMeta
     
     one_time_only = False
+    automated_award = True #if set to False, award_ceremony is only called manually (preferable offline or in batch mode). For performance issue with high number of badges.
     model = models.Model
 
     progress_start = 0
@@ -73,7 +74,8 @@ class MetaBadge(object):
         # whenever the server is reloaded, the badge will be initialized and
         # added to the database
         self._keep_badge_updated()
-        post_save.connect(self._signal_callback, sender=self.model)
+        if automated_award: 
+            post_save.connect(self._signal_callback, sender=self.model)
     
     def _signal_callback(self, **kwargs):
         i = kwargs['instance']
