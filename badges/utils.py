@@ -4,7 +4,7 @@ from django.db.models.signals import post_save
 from django.contrib.auth.models import User
 
 from badges.models import Badge as BadgeModel
-from badges.models import BadgeToLaureate, LEVEL_CHOICES
+from badges.models import BadgeToUser, LEVEL_CHOICES
 
 
 class RequiresUserOrProgress(Exception): pass
@@ -29,7 +29,7 @@ def badge_count(user_or_qs=None):
     Uses a single database query.
     """
 
-    badge_counts = BadgeToLaureate.objects.all()
+    badge_counts = BadgeToUser.objects.all()
     if isinstance(user_or_qs, User):
         badge_counts = badge_counts.filter(user=user_or_qs)
     elif isinstance(user_or_qs, models.QuerySet):
@@ -50,7 +50,8 @@ def badge_count(user_or_qs=None):
     return [get_badge_count(level_choice[0]) for level_choice in LEVEL_CHOICES]
         
 
-class MetaBadgeMeta(type):    
+class MetaBadgeMeta(type):
+    
     def __new__(cls, name, bases, attrs):
         new_badge = super(MetaBadgeMeta, cls).__new__(cls, name, bases, attrs)
         parents = [b for b in bases if isinstance(b, MetaBadgeMeta)]
@@ -64,17 +65,18 @@ class MetaBadge(object):
     __metaclass__ = MetaBadgeMeta
     
     one_time_only = False
-    automated_award = True #if set to False, award_ceremony is only called manually (preferable offline or in batch mode). For performance issue with high number of badges.
     model = models.Model
+    
+    automated_award = True #set to False is you want to disable award_ceremony on post_save. for performance.
 
     progress_start = 0
-    progress_end = 1
+    progress_finish = 1
     
     def __init__(self):
         # whenever the server is reloaded, the badge will be initialized and
         # added to the database
         self._keep_badge_updated()
-        if automated_award: 
+        if self.automated_award:
             post_save.connect(self._signal_callback, sender=self.model)
     
     def _signal_callback(self, **kwargs):
@@ -90,26 +92,22 @@ class MetaBadge(object):
     def get_user(self, instance):
         return instance.user
 
-    def get_progress(self, laureate):
-        if BadgeToLaureate.objects.filter(badge=self.badge,
-                                          laureate_content_type=laureate_ctype,
-                                          laureate_object_id=laureate.pk).count():
+    def get_progress(self, user):
+        if BadgeToUser.objects.filter(user=user, badge=self.badge).count():
             return 1
         return 0
-
     
-    def get_progress_percentage(self, candidate=None, progress=None):
-        if candidate is None and progress is None:
+    def get_progress_percentage(self, progress=None, user=None):
+        if user is None and progress is None:
             raise RequiresUserOrProgress("This method requires either a user or progress keyword argument")
 
         if not progress:
-            progress = self.get_progress(candidate)
+            progress = self.get_progress(user)
 
-        progress = min(progress, self.progress_end)
-
+        progress = min(progress, self.progress_finish)
+        
         # multiply by a float to get floating point precision
-        return (100.0 * progress) / (self.progress_end - self.progress_start)
-
+        return (100.0 * progress) / (self.progress_finish - self.progress_start)
     
     def _keep_badge_updated(self):
         if getattr(self, 'badge', False):
@@ -122,5 +120,5 @@ class MetaBadge(object):
     
     def award_ceremony(self, instance):
         if self._test_conditions(instance):
-            laureate = self.get_user(instance)
-            self.badge.award_to(laureate)
+            user = self.get_user(instance)
+            self.badge.award_to(user)
