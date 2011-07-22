@@ -25,12 +25,18 @@ class BadgeTests(TestCase):
             
             def check_email(self, instance):
                 return bool(instance.email)
+                
+        class YouveGotMailManual(YouveGotMail): 
+            id = 'youve-got-mail-manual'
+            automated_award = False
             
         self.meta_badge = YouveGotMail
+        self.meta_badge_manual = YouveGotMailManual
     
     def test_badge_creation(self):
         badge = Badge.objects.get(id=self.meta_badge.id)
         self.assertTrue(isinstance(badge.meta_badge, self.meta_badge))
+        
         
     def test_badge_registration(self):
         meta_badge_instance = registered_badges[self.meta_badge.id]
@@ -45,11 +51,13 @@ class BadgeTests(TestCase):
 
     def test_badge_progress(self):
         badge = Badge.objects.get(id=self.meta_badge.id)
+        badge_manual = Badge.objects.get(id=self.meta_badge_manual.id)
 
         user = User(username='zodiac', first_name='john', last_name='doe')
         user.save()
 
         self.assertEqual(badge.meta_badge.get_progress(user), 0)
+        self.assertEqual(badge_manual.meta_badge.get_progress(user), 0)
         self.assertEqual(badge.meta_badge.get_progress_percentage(user=user), 0.0)
         self.assertRaises(RequiresUserOrProgress, badge.meta_badge.get_progress_percentage)
 
@@ -57,10 +65,12 @@ class BadgeTests(TestCase):
         user.save()
 
         self.assertEqual(badge.meta_badge.get_progress(user), 1)
+        self.assertEqual(badge_manual.meta_badge.get_progress(user), 0)
         self.assertEqual(badge.meta_badge.get_progress_percentage(user=user), 100.0)        
         
     def test_badge_earned_signal(self):
         test_self = self
+        badge_manual = Badge.objects.get(id=self.meta_badge_manual.id)
         
         signal_handler_kwargs = {}
         def signal_handler(**kwargs):
@@ -80,6 +90,12 @@ class BadgeTests(TestCase):
         self.assertTrue( isinstance(signal_handler_kwargs.get('sender'), self.meta_badge) )
         self.assertEqual(signal_handler_kwargs.get('user'), user)
         self.assertEqual(signal_handler_kwargs.get('badge'), Badge.objects.all()[0])
+        
+        # award manually and make sure the signal fired and the kwargs were correct
+        badge_manual.award_to(user)
+        self.assertTrue( isinstance(signal_handler_kwargs.get('sender'), self.meta_badge_manual) )
+        self.assertEqual(signal_handler_kwargs.get('user'), user)
+        self.assertEqual(signal_handler_kwargs.get('badge'), Badge.objects.all()[1])
 
     def test_template_tags(self):
         badge = Badge.objects.get(id=self.meta_badge.id)
